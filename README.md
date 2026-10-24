@@ -54,11 +54,11 @@ All expressive geometry in the Toolkit is original to Shared‑Horizon but ackno
 
 ---
 
-🗂️ Repository Structure
+🗂️ Repository Structure (src‑based layout)
 
 `
 <pre> 
-    
+
 Shared-Horizon-Toolkit/
 │
 ├── README.md
@@ -66,19 +66,19 @@ Shared-Horizon-Toolkit/
 ├── pyproject.toml
 ├── setup.cfg
 │
-├── shared_horizon/
-│   ├── init.py
-│   │
-│   ├── lineage.py          🔵🟧🟪🟩⬛
-│   ├── envelopes.py        🔵🟧🟪🟩⬛
-│   ├── curvature.py        🔵🟧🟪🟩
-│   ├── collapse.py         🔵🟧🟪🟩⬛
-│   ├── transition.py       🔵🟧🟪🟩⬛
-│   ├── jacobian.py         🔵🟧🟪🟩⬛
-│   ├── firewall.py         🔵🟧🟪🟩⬛
-│   ├── membrane.py         🔵🟧🟪🟩⬛
-│   ├── geodesics.py        🔵🟧🟪🟩⬛
-│   └── examples.py         🔵🟧🟪🟩⬛
+├── src/
+│   └── shared_horizon/
+│       ├── init.py
+│       ├── lineage.py          🔵🟧🟪🟩⬛
+│       ├── envelopes.py        🔵🟧🟪🟩⬛
+│       ├── curvature.py        🔵🟧🟪🟩
+│       ├── collapse.py         🔵🟧🟪🟩⬛
+│       ├── transition.py       🔵🟧🟪🟩⬛
+│       ├── jacobian.py         🔵🟧🟪🟩⬛
+│       ├── firewall.py         🔵🟧🟪🟩⬛
+│       ├── membrane.py         🔵🟧🟪🟩⬛
+│       ├── geodesics.py        🔵🟧🟪🟩⬛
+│       └── examples.py         🔵🟧🟪🟩⬛
 │
 ├── notebooks/
 │   ├── 01-Lineage-Notebook.md
@@ -105,9 +105,16 @@ Shared-Horizon-Toolkit/
     ├── membrane-state-machine.md
     ├── mosaic-specification.md
     └── provenance.md
-`
-    
+
 </pre>
+
+`
+
+This layout follows modern Python packaging standards and ensures clean imports:
+
+`
+from shared_horizon.lineage import OPERATOR
+`
 
 ---
 
