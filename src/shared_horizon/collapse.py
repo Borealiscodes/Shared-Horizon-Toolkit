@@ -1,168 +1,177 @@
 """
 collapse.py
-Shared-Horizon Toolkit — Collapse-Risk Geometry
+Shared-Horizon Toolkit — Collapse-Risk Tensors
 
-Defines collapse-risk tensors, gradients, and lineage-specific
-collapse behavior. Used by membrane.py and transition.py to
-evaluate whether a point or transition is collapse-safe.
+Implements lineage-specific collapse-risk functions and compatibility checks.
+Collapse-risk is Stage 3 of the membrane evaluation pipeline, following
+envelope safety and curvature compatibility.
 
 Author: Borealis S. Hedling (2026)
 """
 
 from dataclasses import dataclass
-from .lineage import (
-    Lineage,
-    OPERATOR,
-    EXPRESSIVE_PRECL,
-    EXPRESSIVE_ANIMA,
-    NARRATIVE_RNE,
-    SPECTRAL
-)
-from .curvature import Point, curvature_gradient, drift_spectral
+from typing import Callable, Dict
+
+from .lineage import Lineage, OPERATOR, PRECL, EXPRESSIVE_ANIMA, RNE, SPECTRAL
+from .curvature import Point, curvature_gradient
 
 
 # ---------------------------------------------------------------------------
-# Collapse-Risk Tensor
+# Collapse-Risk Structured Result
 # ---------------------------------------------------------------------------
 
-@dataclass
+@dataclass(frozen=True)
 class CollapseRisk:
     """
-    Collapse-risk tensor representation.
+    Structured collapse-risk evaluation.
 
-    Attributes:
-        curvature_term: contribution from curvature magnitude
-        gradient_term: contribution from curvature gradient
-        drift_term: contribution from spectral drift
+    Attributes
+    ----------
+    risk : float
+        Collapse-risk energy.
+    lineage : str
+        Lineage name.
+    safe : bool
+        Whether collapse-risk is below lineage stability bound.
+    reason : str
+        Diagnostic explanation.
     """
-    curvature_term: float
-    gradient_term: float
-    drift_term: float
-
-    @property
-    def total(self) -> float:
-        """
-        Total collapse-risk magnitude.
-        """
-        return self.curvature_term + self.gradient_term + self.drift_term
+    risk: float
+    lineage: str
+    safe: bool
+    reason: str
 
 
 # ---------------------------------------------------------------------------
-# Lineage-Specific Collapse Behavior
+# Collapse-Risk Functions
 # ---------------------------------------------------------------------------
 
-def collapse_operator(p: Point) -> CollapseRisk:
+def collapse_operator(p: Point) -> float:
     """
-    NDH operator collapse-risk.
-    Very low curvature and gradient contributions.
+    Operator collapse-risk: low curvature, low gradient.
+    Risk = 0.2 * curvature + 0.1 * gradient
     """
-    return CollapseRisk(
-        curvature_term=abs(p.curvature) * 0.5,
-        gradient_term=abs(p.gradient) * 0.2,
-        drift_term=0.0
-    )
+    return 0.2 * p.curvature + 0.1 * p.gradient
 
 
-def collapse_precl(p: Point) -> CollapseRisk:
+def collapse_precl(p: Point) -> float:
     """
-    PRECL expressive continuity collapse-risk.
-    Low curvature, low gradient.
+    PRECL collapse-risk: expressive continuity.
+    Risk = 0.3 * curvature + 0.15 * gradient
     """
-    return CollapseRisk(
-        curvature_term=abs(p.curvature) * 0.6,
-        gradient_term=abs(p.gradient) * 0.3,
-        drift_term=0.0
-    )
+    return 0.3 * p.curvature + 0.15 * p.gradient
 
 
-def collapse_anima(p: Point) -> CollapseRisk:
+def collapse_anima(p: Point) -> float:
     """
-    ANIMA expressive phenomenology collapse-risk.
-    High curvature and steep gradients dominate.
+    ANIMA collapse-risk: steep curvature + gradient amplification.
+    Risk = 1.5 * curvature + 1.2 * gradient
     """
-    return CollapseRisk(
-        curvature_term=abs(p.curvature) * 1.2,
-        gradient_term=abs(p.gradient) * 1.0,
-        drift_term=0.0
-    )
+    return 1.5 * p.curvature + 1.2 * p.gradient
 
 
-def collapse_narrative(p: Point) -> CollapseRisk:
+def collapse_narrative(p: Point) -> float:
     """
-    RNE narrative collapse-risk.
-    Moderate curvature, moderate gradient.
+    RNE collapse-risk: moderate curvature + gradient.
+    Risk = 0.8 * curvature + 0.6 * gradient
     """
-    return CollapseRisk(
-        curvature_term=abs(p.curvature) * 0.8,
-        gradient_term=abs(p.gradient) * 0.5,
-        drift_term=0.0
-    )
+    return 0.8 * p.curvature + 0.6 * p.gradient
 
 
-def collapse_spectral(p: Point) -> CollapseRisk:
+def collapse_spectral(p: Point) -> float:
     """
-    Spectral collapse-risk.
-    Drift dominates collapse behavior.
+    Spectral collapse-risk: drift-dominated geometry.
+    Risk = 2.0 * drift + 0.3 * curvature
     """
-    drift = drift_spectral(p)
-    return CollapseRisk(
-        curvature_term=0.0,
-        gradient_term=0.0,
-        drift_term=abs(drift) * 1.5
-    )
+    return 2.0 * p.drift + 0.3 * p.curvature
 
 
 # ---------------------------------------------------------------------------
-# Collapse-Risk Dispatch
+# Collapse Registry
 # ---------------------------------------------------------------------------
 
-def get_collapse_fn(lineage: Lineage):
-    """
-    Retrieve collapse-risk function for a lineage.
-    """
-    if lineage is OPERATOR:
-        return collapse_operator
-    if lineage is EXPRESSIVE_PRECL:
-        return collapse_precl
-    if lineage is EXPRESSIVE_ANIMA:
-        return collapse_anima
-    if lineage is NARRATIVE_RNE:
-        return collapse_narrative
-    if lineage is SPECTRAL:
-        return collapse_spectral
+COLLAPSE_REGISTRY: Dict[str, Callable[[Point], float]] = {
+    "OPERATOR": collapse_operator,
+    "PRECL": collapse_precl,
+    "ANIMA": collapse_anima,
+    "RNE": collapse_narrative,
+    "SPECTRAL": collapse_spectral,
+}
 
-    raise ValueError(f"Unknown lineage: {lineage.name}")
+
+def get_collapse_fn(lineage: Lineage) -> Callable[[Point], float]:
+    """
+    Retrieve the collapse-risk function for a lineage.
+    """
+    name = lineage.name.upper()
+    if name not in COLLAPSE_REGISTRY:
+        raise KeyError(f"No collapse-risk function registered for lineage: {lineage.name}")
+    return COLLAPSE_REGISTRY[name]
 
 
 # ---------------------------------------------------------------------------
 # Collapse Compatibility
 # ---------------------------------------------------------------------------
 
-def collapse_compatible(p: Point, q: Point) -> bool:
+@dataclass(frozen=True)
+class CollapseCompatibility:
+    """Structured result for collapse compatibility evaluation."""
+    compatible: bool
+    delta: float
+    threshold: float
+    reason: str
+
+
+def collapse_compatible(p: Point, q: Point, threshold: float = 0.25) -> CollapseCompatibility:
     """
-    Check collapse-risk compatibility between source point p and target q.
+    Determine whether collapse-risk transition p -> q is smooth enough.
 
-    Rules:
-        - Operator → PRECL: safe if collapse-risk does not increase sharply
-        - ANIMA → Narrative: safe if gradient decreases
-        - Spectral → anything: unsafe if drift increases
-        - Default: safe if total collapse-risk does not increase by > 20%
+    Uses curvature-gradient as the underlying geometric signal.
     """
-    # Compute collapse-risk tensors
-    cp = collapse_operator(p) if p.drift == 0 else collapse_spectral(p)
-    cq = collapse_operator(q) if q.drift == 0 else collapse_spectral(q)
+    delta = curvature_gradient(p, q)
+    compatible = delta <= threshold
 
-    # Operator → PRECL
-    if p.curvature <= OPERATOR.stability_bound and q.curvature <= EXPRESSIVE_PRECL.stability_bound:
-        return cq.total <= cp.total + 0.05
+    reason = (
+        "Collapse-risk transition is smooth."
+        if compatible else
+        f"Collapse gradient {delta:.4f} exceeds threshold {threshold:.4f}."
+    )
 
-    # ANIMA → Narrative
-    if p.curvature > EXPRESSIVE_PRECL.stability_bound and q.curvature <= NARRATIVE_RNE.stability_bound:
-        return q.gradient <= p.gradient
+    return CollapseCompatibility(
+        compatible=compatible,
+        delta=delta,
+        threshold=threshold,
+        reason=reason,
+    )
 
-    # Spectral → anything
-    if p.drift > 0:
-        return q.drift <= p.drift
 
-    # Default rule
-    return cq.total <= cp.total * 1.2
+# ---------------------------------------------------------------------------
+# Collapse-Risk Spike Detection
+# ---------------------------------------------------------------------------
+
+def collapse_spike(p: Point, lineage: Lineage) -> CollapseRisk:
+    """
+    Detect collapse-risk spikes relative to lineage stability bounds.
+
+    Returns
+    -------
+    CollapseRisk
+        Structured result containing risk, safety flag, and diagnostic reason.
+    """
+    fn = get_collapse_fn(lineage)
+    risk = fn(p)
+    bound = lineage.stability_bound
+    safe = risk <= bound
+
+    reason = (
+        "Collapse-risk within stability bound."
+        if safe else
+        f"Collapse-risk {risk:.4f} exceeds stability bound {bound:.4f}."
+    )
+
+    return CollapseRisk(
+        risk=risk,
+        lineage=lineage.name,
+        safe=safe,
+        reason=reason,
+    )
