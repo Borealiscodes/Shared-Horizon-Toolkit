@@ -1,51 +1,68 @@
 """
 examples.py
-Shared-Horizon Toolkit — Worked Examples
+Shared-Horizon Toolkit — Worked Example Utilities
 
-Provides small, self-contained examples demonstrating how to use the
-Shared-Horizon membrane evaluator, geodesic solver, and lineage geometry.
+Provides canonical geometric points and example evaluations for all subsystems:
+envelope, curvature, collapse-risk, transitions, firewall, membrane, and
+geodesics. Used in Notebook 08 for demonstration and debugging.
 
 Author: Borealis S. Hedling (2026)
 """
 
-from .lineage import get_lineage
-from .curvature import Point
+from dataclasses import dataclass
+from typing import Dict, Any
+
+from .lineage import (
+    Lineage,
+    OPERATOR,
+    PRECL,
+    EXPRESSIVE_ANIMA,
+    RNE,
+    SPECTRAL,
+)
+from .curvature import Point, curvature_compatible
+from .envelopes import envelope_safe
+from .collapse import collapse_compatible, collapse_spike
+from .transition import transition_allowed
+from .firewall import firewall
 from .membrane import MembraneEvaluator
 from .geodesics import GeodesicSolver
 
 
 # ---------------------------------------------------------------------------
-# Example Points
+# Canonical Example Points
 # ---------------------------------------------------------------------------
 
-def example_points():
+def example_points() -> Dict[str, Point]:
     """
-    Returns a pair of example points used throughout the examples.
+    Canonical geometric points used for examples and debugging.
+
+    Returns
+    -------
+    dict
+        Named geometric points.
     """
-    p = Point(curvature=0.05, gradient=0.01, drift=0.0)   # Operator-safe
-    q = Point(curvature=0.12, gradient=0.03, drift=0.0)   # PRECL-safe
-    return p, q
+    return {
+        "low_operator": Point(curvature=0.05, gradient=0.02, drift=0.0),
+        "mid_precl": Point(curvature=0.10, gradient=0.05, drift=0.0),
+        "high_anima": Point(curvature=0.30, gradient=0.20, drift=0.0),
+        "mid_rne": Point(curvature=0.15, gradient=0.10, drift=0.0),
+        "spectral_drift": Point(curvature=0.05, gradient=0.02, drift=0.20),
+    }
 
 
 # ---------------------------------------------------------------------------
 # Envelope Example
 # ---------------------------------------------------------------------------
 
-def example_envelope():
-    """
-    Demonstrate envelope safety check.
-    """
-    p, _ = example_points()
-    operator = get_lineage("OPERATOR")
-
-    evaluator = MembraneEvaluator()
-    safe = evaluator.envelope_safe(p, operator)
-
+def example_envelope() -> Dict[str, Any]:
+    pts = example_points()
     return {
-        "example": "Envelope Safety",
-        "lineage": operator.name,
-        "point": p,
-        "safe": safe
+        "operator": envelope_safe(pts["low_operator"], OPERATOR),
+        "precl": envelope_safe(pts["mid_precl"], PRECL),
+        "anima": envelope_safe(pts["high_anima"], EXPRESSIVE_ANIMA),
+        "rne": envelope_safe(pts["mid_rne"], RNE),
+        "spectral": envelope_safe(pts["spectral_drift"], SPECTRAL),
     }
 
 
@@ -53,43 +70,27 @@ def example_envelope():
 # Curvature Example
 # ---------------------------------------------------------------------------
 
-def example_curvature():
-    """
-    Demonstrate curvature evaluation.
-    """
-    p, _ = example_points()
-    operator = get_lineage("OPERATOR")
-
-    evaluator = MembraneEvaluator()
-    curvature = evaluator.curvature(p, operator)
-
+def example_curvature() -> Dict[str, Any]:
+    pts = example_points()
     return {
-        "example": "Curvature Evaluation",
-        "lineage": operator.name,
-        "point": p,
-        "curvature": curvature
+        "operator_precl": curvature_compatible(pts["low_operator"], pts["mid_precl"]),
+        "precl_anima": curvature_compatible(pts["mid_precl"], pts["high_anima"]),
+        "anima_rne": curvature_compatible(pts["high_anima"], pts["mid_rne"]),
     }
 
 
 # ---------------------------------------------------------------------------
-# Collapse-Risk Example
+# Collapse Example
 # ---------------------------------------------------------------------------
 
-def example_collapse():
-    """
-    Demonstrate collapse-risk evaluation.
-    """
-    p, _ = example_points()
-    operator = get_lineage("OPERATOR")
-
-    evaluator = MembraneEvaluator()
-    risk = evaluator.collapse_risk(p, operator)
-
+def example_collapse() -> Dict[str, Any]:
+    pts = example_points()
     return {
-        "example": "Collapse-Risk Evaluation",
-        "lineage": operator.name,
-        "point": p,
-        "collapse_risk": risk
+        "operator": collapse_spike(pts["low_operator"], OPERATOR),
+        "precl": collapse_spike(pts["mid_precl"], PRECL),
+        "anima": collapse_spike(pts["high_anima"], EXPRESSIVE_ANIMA),
+        "rne": collapse_spike(pts["mid_rne"], RNE),
+        "spectral": collapse_spike(pts["spectral_drift"], SPECTRAL),
     }
 
 
@@ -97,22 +98,12 @@ def example_collapse():
 # Transition Example
 # ---------------------------------------------------------------------------
 
-def example_transition():
-    """
-    Demonstrate transition safety check (pre-firewall).
-    """
-    p, q = example_points()
-    source = get_lineage("OPERATOR")
-    target = get_lineage("PRECL")
-
-    evaluator = MembraneEvaluator()
-    safe = evaluator.transition_safe(p, q, source, target)
-
+def example_transition() -> Dict[str, Any]:
     return {
-        "example": "Transition Safety",
-        "source": source.name,
-        "target": target.name,
-        "safe": safe
+        "operator_precl": transition_allowed(OPERATOR, PRECL),
+        "precl_anima": transition_allowed(PRECL, EXPRESSIVE_ANIMA),
+        "anima_operator": transition_allowed(EXPRESSIVE_ANIMA, OPERATOR),
+        "spectral_any": transition_allowed(SPECTRAL, PRECL),
     }
 
 
@@ -120,23 +111,18 @@ def example_transition():
 # Firewall Example
 # ---------------------------------------------------------------------------
 
-def example_firewall():
-    """
-    Demonstrate firewall enforcement.
-    """
-    p, q = example_points()
-    source = get_lineage("OPERATOR")
-    target = get_lineage("PRECL")
-
-    evaluator = MembraneEvaluator()
-    decision = evaluator.evaluate(p, q, source.name, target.name)
-
+def example_firewall() -> Dict[str, Any]:
+    pts = example_points()
     return {
-        "example": "Firewall + Membrane Evaluation",
-        "source": source.name,
-        "target": target.name,
-        "allowed": decision.allowed,
-        "reason": decision.reason
+        "precl_to_anima": firewall(
+            pts["mid_precl"], pts["high_anima"], PRECL, EXPRESSIVE_ANIMA
+        ),
+        "anima_to_operator": firewall(
+            pts["high_anima"], pts["low_operator"], EXPRESSIVE_ANIMA, OPERATOR
+        ),
+        "spectral_to_precl": firewall(
+            pts["spectral_drift"], pts["mid_precl"], SPECTRAL, PRECL
+        ),
     }
 
 
@@ -144,21 +130,33 @@ def example_firewall():
 # Geodesic Example
 # ---------------------------------------------------------------------------
 
-def example_geodesic():
-    """
-    Demonstrate lineage geodesic computation.
-    """
-    p, q = example_points()
-    operator = get_lineage("OPERATOR")
-
+def example_geodesic() -> Dict[str, Any]:
+    pts = example_points()
     solver = GeodesicSolver()
-    segment = solver.geodesic(p, q, operator)
-
     return {
-        "example": "Geodesic Computation",
-        "lineage": operator.name,
-        "segment_total": segment.total,
-        "segment": segment
+        "operator_path": solver.compute(pts["low_operator"], pts["mid_precl"], OPERATOR),
+        "precl_path": solver.compute(pts["mid_precl"], pts["high_anima"], PRECL),
+        "spectral_path": solver.compute(pts["low_operator"], pts["spectral_drift"], SPECTRAL),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Full Membrane Example
+# ---------------------------------------------------------------------------
+
+def example_membrane() -> Dict[str, Any]:
+    pts = example_points()
+    evaluator = MembraneEvaluator()
+    return {
+        "precl_to_anima": evaluator.evaluate(
+            pts["mid_precl"], pts["high_anima"], PRECL, EXPRESSIVE_ANIMA
+        ),
+        "operator_to_precl": evaluator.evaluate(
+            pts["low_operator"], pts["mid_precl"], OPERATOR, PRECL
+        ),
+        "anima_to_operator": evaluator.evaluate(
+            pts["high_anima"], pts["low_operator"], EXPRESSIVE_ANIMA, OPERATOR
+        ),
     }
 
 
@@ -166,15 +164,17 @@ def example_geodesic():
 # All Examples
 # ---------------------------------------------------------------------------
 
-def all_examples():
+def all_examples() -> Dict[str, Any]:
     """
-    Run all examples and return a combined dictionary.
+    Return all example evaluations in a single dictionary.
     """
     return {
+        "points": example_points(),
         "envelope": example_envelope(),
         "curvature": example_curvature(),
         "collapse": example_collapse(),
         "transition": example_transition(),
         "firewall": example_firewall(),
-        "geodesic": example_geodesic()
+        "geodesic": example_geodesic(),
+        "membrane": example_membrane(),
     }
