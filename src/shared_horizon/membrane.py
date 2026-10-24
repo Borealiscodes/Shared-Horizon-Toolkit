@@ -1,122 +1,220 @@
 """
 membrane.py
-Shared-Horizon Toolkit — Full Membrane Evaluator
+Shared-Horizon Toolkit — Unified Membrane Evaluator
 
-The membrane evaluator is the central orchestrator of the Shared-Horizon
-architecture. It combines lineage geometry, stability envelopes, curvature
-compatibility, collapse-risk behavior, Jacobian smoothness constraints, and
-firewall boundary enforcement to determine whether transitions between points
-are allowed.
+The membrane evaluator integrates all geometric subsystems:
+
+1. Envelope safety
+2. Curvature compatibility
+3. Collapse-risk compatibility
+4. Jacobian smoothness
+5. Firewall enforcement
+
+It produces a MembraneDecision object summarizing the full evaluation.
 
 Author: Borealis S. Hedling (2026)
 """
 
 from dataclasses import dataclass
+
 from .lineage import Lineage, get_lineage
-from .curvature import Point, get_curvature_fn
-from .envelopes import get_envelope
-from .collapse import get_collapse_fn
+from .curvature import Point, curvature_compatible
+from .envelopes import envelope_safe
+from .collapse import collapse_compatible
 from .jacobian import jacobian_safe
-from .transition import transition_allowed
-from .firewall import firewall, FirewallDecision
+from .firewall import firewall
 
 
 # ---------------------------------------------------------------------------
-# Membrane Decision
+# Membrane Decision Structure
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class MembraneDecision:
+    """
+    Structured result of full membrane evaluation.
+
+    Attributes
+    ----------
+    allowed : bool
+        Whether the transition is permitted.
+    source : str
+        Source lineage name.
+    target : str
+        Target lineage name.
+    envelope_safe : bool
+        Envelope safety flag.
+    curvature_ok : bool
+        Curvature compatibility flag.
+    collapse_ok : bool
+        Collapse-risk compatibility flag.
+    jacobian_ok : bool
+        Jacobian smoothness flag.
+    firewall_ok : bool
+        Firewall permission flag.
+    reason : str
+        Diagnostic explanation.
+    """
     allowed: bool
+    source: str
+    target: str
+    envelope_safe: bool
+    curvature_ok: bool
+    collapse_ok: bool
+    jacobian_ok: bool
+    firewall_ok: bool
     reason: str
-    lineage_source: str
-    lineage_target: str
 
 
 # ---------------------------------------------------------------------------
-# Membrane Evaluator
+# Unified Membrane Evaluator
 # ---------------------------------------------------------------------------
 
 class MembraneEvaluator:
     """
-    Full Shared-Horizon membrane evaluator.
+    Unified membrane evaluator for geometric AI lineage transitions.
 
-    Responsibilities:
-        - envelope safety
-        - curvature evaluation
-        - collapse-risk evaluation
-        - Jacobian smoothness
-        - transition compatibility
-        - firewall boundary enforcement
-        - unified membrane decision
+    Usage
+    -----
+    evaluator = MembraneEvaluator()
+    decision = evaluator.evaluate(p, q, "PRECL", "ANIMA")
     """
 
-    def __init__(self):
-        pass
-
-    # -----------------------------------------------------------------------
-    # Envelope Check
-    # -----------------------------------------------------------------------
-
-    def envelope_safe(self, p: Point, lineage: Lineage) -> bool:
-        env = get_envelope(lineage.name)
-        return env.safe(p)
-
-    # -----------------------------------------------------------------------
-    # Curvature Evaluation
-    # -----------------------------------------------------------------------
-
-    def curvature(self, p: Point, lineage: Lineage) -> float:
-        fn = get_curvature_fn(lineage)
-        return fn(p)
-
-    # -----------------------------------------------------------------------
-    # Collapse-Risk Evaluation
-    # -----------------------------------------------------------------------
-
-    def collapse_risk(self, p: Point, lineage: Lineage) -> float:
-        fn = get_collapse_fn(lineage)
-        return fn(p).total
-
-    # -----------------------------------------------------------------------
-    # Unified Transition Check (pre-firewall)
-    # -----------------------------------------------------------------------
-
-    def transition_safe(self, p: Point, q: Point, source: Lineage, target: Lineage) -> bool:
-        return transition_allowed(p, q, source.name, target.name)
-
-    # -----------------------------------------------------------------------
-    # Full Membrane Evaluation
-    # -----------------------------------------------------------------------
-
-    def evaluate(self, p: Point, q: Point, source_name: str, target_name: str) -> MembraneDecision:
+    def evaluate(self, p: Point, q: Point,
+                 source: Lineage | str,
+                 target: Lineage | str) -> MembraneDecision:
         """
-        Evaluate a transition from point p (source lineage) to q (target lineage)
-        through the full Shared-Horizon membrane architecture.
+        Evaluate full membrane pipeline for transition p → q.
+
+        Parameters
+        ----------
+        p : Point
+            Source geometric point.
+        q : Point
+            Target geometric point.
+        source : Lineage or str
+            Source lineage.
+        target : Lineage or str
+            Target lineage.
+
+        Returns
+        -------
+        MembraneDecision
+            Structured result containing all subsystem evaluations.
         """
 
-        source = get_lineage(source_name)
-        target = get_lineage(target_name)
+        # Normalize lineage inputs
+        if isinstance(source, str):
+            source = get_lineage(source)
+        if isinstance(target, str):
+            target = get_lineage(target)
 
-        # Envelope safety
-        if not self.envelope_safe(p, source):
-            return MembraneDecision(False, "Source envelope violation.", source.name, target.name)
+        # ------------------------------------------------------------------
+        # 1. Envelope Safety
+        # ------------------------------------------------------------------
+        env = envelope_safe(q, target)
+        envelope_ok = env.safe
 
-        if not self.envelope_safe(q, target):
-            return MembraneDecision(False, "Target envelope violation.", source.name, target.name)
+        if not envelope_ok:
+            return MembraneDecision(
+                allowed=False,
+                source=source.name,
+                target=target.name,
+                envelope_safe=False,
+                curvature_ok=False,
+                collapse_ok=False,
+                jacobian_ok=False,
+                firewall_ok=False,
+                reason=f"Envelope violation: {env.reason}",
+            )
 
-        # Transition compatibility (curvature + collapse-risk)
-        if not self.transition_safe(p, q, source, target):
-            return MembraneDecision(False, "Transition compatibility failure.", source.name, target.name)
+        # ------------------------------------------------------------------
+        # 2. Curvature Compatibility
+        # ------------------------------------------------------------------
+        curv = curvature_compatible(p, q)
+        curvature_ok = curv.compatible
 
-        # Jacobian smoothness
-        if not jacobian_safe(p, q, target):
-            return MembraneDecision(False, "Jacobian smoothness violation.", source.name, target.name)
+        if not curvature_ok:
+            return MembraneDecision(
+                allowed=False,
+                source=source.name,
+                target=target.name,
+                envelope_safe=True,
+                curvature_ok=False,
+                collapse_ok=False,
+                jacobian_ok=False,
+                firewall_ok=False,
+                reason=f"Curvature incompatibility: {curv.reason}",
+            )
 
-        # Firewall enforcement
-        fw = firewall(source, target, p, q)
-        if not fw.allowed:
-            return MembraneDecision(False, fw.reason, source.name, target.name)
+        # ------------------------------------------------------------------
+        # 3. Collapse-Risk Compatibility
+        # ------------------------------------------------------------------
+        coll = collapse_compatible(p, q)
+        collapse_ok = coll.compatible
 
-        # If all checks pass
-        return MembraneDecision(True, "Transition allowed by membrane.", source.name, target.name)
+        if not collapse_ok:
+            return MembraneDecision(
+                allowed=False,
+                source=source.name,
+                target=target.name,
+                envelope_safe=True,
+                curvature_ok=True,
+                collapse_ok=False,
+                jacobian_ok=False,
+                firewall_ok=False,
+                reason=f"Collapse-risk incompatibility: {coll.reason}",
+            )
+
+        # ------------------------------------------------------------------
+        # 4. Jacobian Smoothness
+        # ------------------------------------------------------------------
+        jac = jacobian_safe(p, q, target)
+        jacobian_ok = jac.smooth
+
+        if not jacobian_ok:
+            return MembraneDecision(
+                allowed=False,
+                source=source.name,
+                target=target.name,
+                envelope_safe=True,
+                curvature_ok=True,
+                collapse_ok=True,
+                jacobian_ok=False,
+                firewall_ok=False,
+                reason=f"Jacobian blowout: {jac.reason}",
+            )
+
+        # ------------------------------------------------------------------
+        # 5. Firewall Enforcement
+        # ------------------------------------------------------------------
+        fw = firewall(p, q, source, target)
+        firewall_ok = fw.allowed
+
+        if not firewall_ok:
+            return MembraneDecision(
+                allowed=False,
+                source=source.name,
+                target=target.name,
+                envelope_safe=True,
+                curvature_ok=True,
+                collapse_ok=True,
+                jacobian_ok=True,
+                firewall_ok=False,
+                reason=f"Firewall block: {fw.reason}",
+            )
+
+        # ------------------------------------------------------------------
+        # All checks passed
+        # ------------------------------------------------------------------
+        return MembraneDecision(
+            allowed=True,
+            source=source.name,
+            target=target.name,
+            envelope_safe=True,
+            curvature_ok=True,
+            collapse_ok=True,
+            jacobian_ok=True,
+            firewall_ok=True,
+            reason="Transition allowed by full membrane evaluation.",
+                     )
