@@ -1,142 +1,126 @@
 """
 jacobian.py
-Shared-Horizon Toolkit — Jacobian Smoothness Constraints
+Shared-Horizon Toolkit — Jacobian Smoothness Checks
 
-Defines Jacobian magnitude evaluation and lineage-specific smoothness
-bounds. Used by membrane.py to ensure transitions do not violate
-smoothness constraints required by the Shared-Horizon architecture.
+Implements lineage-specific Jacobian smoothness evaluation. The Jacobian
+constraint is Stage 4.5 of the membrane pipeline, positioned between collapse-
+risk evaluation and firewall enforcement.
+
+The Jacobian captures local differential stability: how rapidly curvature and
+gradient change between two geometric points.
 
 Author: Borealis S. Hedling (2026)
 """
 
 from dataclasses import dataclass
-from .lineage import (
-    Lineage,
-    OPERATOR,
-    EXPRESSIVE_PRECL,
-    EXPRESSIVE_ANIMA,
-    NARRATIVE_RNE,
-    SPECTRAL
-)
-from .curvature import Point
+from typing import Dict
+
+from .curvature import Point, curvature_gradient
+from .lineage import Lineage, OPERATOR, PRECL, EXPRESSIVE_ANIMA, RNE, SPECTRAL
 
 
 # ---------------------------------------------------------------------------
-# Jacobian Representation
+# Jacobian Smoothness Thresholds
 # ---------------------------------------------------------------------------
+# These thresholds define how much local differential change is allowed
+# before the membrane flags instability.
 
-@dataclass
-class Jacobian:
-    """
-    Jacobian magnitude representation.
-
-    Attributes:
-        magnitude: absolute Jacobian determinant or proxy measure
-    """
-    magnitude: float
-
-    @property
-    def abs(self) -> float:
-        return abs(self.magnitude)
+JACOBIAN_THRESHOLDS: Dict[str, float] = {
+    "OPERATOR": 0.15,   # very smooth required
+    "PRECL": 0.20,      # smooth expressive continuity
+    "ANIMA": 0.35,      # expressive curvature amplification
+    "RNE": 0.30,        # narrative curvature
+    "SPECTRAL": 0.50,   # drift-dominated, less curvature sensitivity
+}
 
 
 # ---------------------------------------------------------------------------
-# Jacobian Evaluation
+# Jacobian Structured Result
 # ---------------------------------------------------------------------------
 
-def jacobian_operator(p: Point, q: Point) -> Jacobian:
+@dataclass(frozen=True)
+class JacobianResult:
     """
-    NDH operator Jacobian.
-    Very smooth, low curvature → low Jacobian magnitude.
+    Structured Jacobian evaluation.
+
+    Attributes
+    ----------
+    smooth : bool
+        Whether the Jacobian is within lineage-specific bounds.
+    delta : float
+        Local differential change between points.
+    threshold : float
+        Maximum allowed Jacobian magnitude.
+    lineage : str
+        Lineage name.
+    reason : str
+        Diagnostic explanation.
     """
-    return Jacobian(
-        magnitude=abs(q.curvature - p.curvature) * 0.5
+    smooth: bool
+    delta: float
+    threshold: float
+    lineage: str
+    reason: str
+
+
+# ---------------------------------------------------------------------------
+# Jacobian Estimator
+# ---------------------------------------------------------------------------
+
+def estimate_jacobian(p: Point, q: Point) -> float:
+    """
+    Estimate the Jacobian magnitude between two points.
+
+    For the Shared-Horizon architecture, the Jacobian is approximated by
+    curvature-gradient difference, which captures local differential change.
+
+    J = |Δcurvature| + |Δgradient|
+    """
+    return curvature_gradient(p, q)
+
+
+# ---------------------------------------------------------------------------
+# Jacobian Smoothness Check
+# ---------------------------------------------------------------------------
+
+def jacobian_safe(p: Point, q: Point, lineage: Lineage | str) -> JacobianResult:
+    """
+    Determine whether the Jacobian between two points is smooth enough for
+    membrane evaluation.
+
+    Parameters
+    ----------
+    p : Point
+        Source geometric point.
+    q : Point
+        Target geometric point.
+    lineage : Lineage or str
+        Lineage object or lineage name.
+
+    Returns
+    -------
+    JacobianResult
+        Structured result containing smoothness flag, delta, threshold,
+        lineage name, and diagnostic reason.
+    """
+    if isinstance(lineage, str):
+        from .lineage import get_lineage
+        lineage = get_lineage(lineage)
+
+    threshold = JACOBIAN_THRESHOLDS[lineage.name]
+    delta = estimate_jacobian(p, q)
+    smooth = delta <= threshold
+
+    reason = (
+        "Jacobian within smoothness bound."
+        if smooth else
+        f"Jacobian {delta:.4f} exceeds smoothness bound {threshold:.4f}."
     )
 
-
-def jacobian_precl(p: Point, q: Point) -> Jacobian:
-    """
-    PRECL expressive continuity Jacobian.
-    Smooth but slightly more flexible than operator geometry.
-    """
-    return Jacobian(
-        magnitude=abs(q.curvature - p.curvature) * 0.7
+    return JacobianResult(
+        smooth=smooth,
+        delta=delta,
+        threshold=threshold,
+        lineage=lineage.name,
+        reason=reason,
     )
-
-
-def jacobian_anima(p: Point, q: Point) -> Jacobian:
-    """
-    ANIMA expressive phenomenology Jacobian.
-    High curvature and steep gradients → large Jacobian magnitudes.
-    """
-    return Jacobian(
-        magnitude=abs(q.curvature - p.curvature) * 1.5 +
-                  abs(q.gradient - p.gradient) * 1.2
-    )
-
-
-def jacobian_narrative(p: Point, q: Point) -> Jacobian:
-    """
-    RNE narrative Jacobian.
-    Moderate curvature, moderate gradient.
-    """
-    return Jacobian(
-        magnitude=abs(q.curvature - p.curvature) * 1.0 +
-                  abs(q.gradient - p.gradient) * 0.6
-    )
-
-
-def jacobian_spectral(p: Point, q: Point) -> Jacobian:
-    """
-    Spectral Jacobian.
-    Drift dominates smoothness behavior.
-    """
-    return Jacobian(
-        magnitude=abs(q.drift - p.drift) * 2.0
-    )
-
-
-# ---------------------------------------------------------------------------
-# Jacobian Dispatch
-# ---------------------------------------------------------------------------
-
-def get_jacobian_fn(lineage: Lineage):
-    """
-    Retrieve Jacobian evaluation function for a lineage.
-    """
-    if lineage is OPERATOR:
-        return jacobian_operator
-    if lineage is EXPRESSIVE_PRECL:
-        return jacobian_precl
-    if lineage is EXPRESSIVE_ANIMA:
-        return jacobian_anima
-    if lineage is NARRATIVE_RNE:
-        return jacobian_narrative
-    if lineage is SPECTRAL:
-        return jacobian_spectral
-
-    raise ValueError(f"Unknown lineage: {lineage.name}")
-
-
-# ---------------------------------------------------------------------------
-# Jacobian Safety Check
-# ---------------------------------------------------------------------------
-
-def jacobian_safe(p: Point, q: Point, lineage: Lineage) -> bool:
-    """
-    Check whether the Jacobian magnitude is within the lineage's smoothness bound.
-
-    Rules:
-        - Operator: extremely strict
-        - PRECL: strict but flexible
-        - ANIMA: large Jacobians allowed
-        - Narrative: moderate Jacobians allowed
-        - Spectral: drift-based Jacobians allowed but monitored
-    """
-    fn = get_jacobian_fn(lineage)
-    J = fn(p, q)
-
-    # Bound is lineage.stability_bound scaled for Jacobian behavior
-    bound = lineage.stability_bound * 2.0
-
-    return J.abs <= bound
