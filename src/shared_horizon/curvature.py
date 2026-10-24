@@ -1,43 +1,41 @@
 """
 curvature.py
-Shared-Horizon Toolkit — Curvature & Drift Geometry
+Shared-Horizon Toolkit — Curvature, Gradient & Drift
 
-Defines curvature, drift, and curvature-gradient functions used across
-the membrane evaluator. Provides lineage-specific curvature behavior
-for operator, expressive, narrative, and spectral systems.
+Defines the geometric Point object and lineage-specific curvature, gradient,
+and drift functions. Implements curvature compatibility checks used in Stage 2
+of the membrane evaluation pipeline.
 
 Author: Borealis S. Hedling (2026)
 """
 
 from dataclasses import dataclass
-from .lineage import (
-    Lineage,
-    OPERATOR,
-    EXPRESSIVE_PRECL,
-    EXPRESSIVE_ANIMA,
-    NARRATIVE_RNE,
-    SPECTRAL
-)
+from typing import Callable, Dict
+
+from .lineage import Lineage, OPERATOR, PRECL, EXPRESSIVE_ANIMA, RNE, SPECTRAL
 
 
 # ---------------------------------------------------------------------------
-# Point Geometry
+# Geometric Point Definition
 # ---------------------------------------------------------------------------
 
-@dataclass
+@dataclass(frozen=True)
 class Point:
     """
-    Minimal geometric point representation used by curvature, drift,
-    envelope, collapse-risk, and transition modules.
+    Canonical geometric point used throughout the Shared-Horizon architecture.
 
-    Attributes:
-        curvature: scalar curvature at the point
-        gradient: curvature gradient magnitude
-        drift: spectral drift magnitude
+    Attributes
+    ----------
+    curvature : float
+        Local curvature magnitude.
+    gradient : float
+        Curvature gradient magnitude.
+    drift : float
+        Spectral drift magnitude (SPECTRAL lineage only).
     """
     curvature: float
     gradient: float
-    drift: float
+    drift: float = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -45,105 +43,109 @@ class Point:
 # ---------------------------------------------------------------------------
 
 def curvature_operator(p: Point) -> float:
-    """
-    NDH operator curvature.
-    Typically small, smooth, and reversible.
-    """
+    """Operator curvature: low curvature, low gradient."""
     return p.curvature
 
 
 def curvature_precl(p: Point) -> float:
-    """
-    PRECL expressive continuity curvature.
-    Low curvature, smooth gradients.
-    """
-    return p.curvature
+    """PRECL curvature: slightly higher sensitivity."""
+    return 1.2 * p.curvature
 
 
 def curvature_anima(p: Point) -> float:
-    """
-    ANIMA expressive phenomenology curvature.
-    High curvature with steep gradients.
-    """
-    return p.curvature
+    """ANIMA curvature: steep curvature amplification."""
+    return 2.5 * p.curvature + 1.5 * p.gradient
 
 
 def curvature_narrative(p: Point) -> float:
-    """
-    RNE narrative curvature.
-    Moderate curvature with reversibility constraints.
-    """
-    return p.curvature
+    """RNE curvature: moderate curvature + gradient."""
+    return 1.8 * p.curvature + 1.0 * p.gradient
 
-
-# ---------------------------------------------------------------------------
-# Drift Functions (Spectral)
-# ---------------------------------------------------------------------------
 
 def drift_spectral(p: Point) -> float:
-    """
-    Spectral drift replaces curvature as the dominant instability measure.
-    """
-    return p.drift
+    """Spectral drift: drift dominates curvature."""
+    return 3.0 * p.drift + 0.2 * p.curvature
 
 
 # ---------------------------------------------------------------------------
-# Curvature Gradient Functions
+# Curvature Registry
 # ---------------------------------------------------------------------------
 
-def curvature_gradient(p: Point) -> float:
+CURVATURE_REGISTRY: Dict[str, Callable[[Point], float]] = {
+    "OPERATOR": curvature_operator,
+    "PRECL": curvature_precl,
+    "ANIMA": curvature_anima,
+    "RNE": curvature_narrative,
+    "SPECTRAL": drift_spectral,
+}
+
+
+def get_curvature_fn(lineage: Lineage) -> Callable[[Point], float]:
     """
-    Curvature gradient magnitude.
-    Used for collapse-risk and expressive curvature behavior.
+    Retrieve the curvature function for a lineage.
     """
-    return p.gradient
-
-
-# ---------------------------------------------------------------------------
-# Compatibility Checks
-# ---------------------------------------------------------------------------
-
-def curvature_compatible(p: Point, q: Point) -> bool:
-    """
-    Check curvature compatibility between source point p and target q.
-
-    Operator → PRECL: low curvature required
-    ANIMA → Narrative: curvature must match (reversible expressive → narrative)
-    Spectral → anything: generally incompatible (handled by firewall)
-    """
-    # Operator → PRECL
-    if p.curvature <= OPERATOR.stability_bound and q.curvature <= EXPRESSIVE_PRECL.stability_bound:
-        return True
-
-    # ANIMA → Narrative (reversible expressive → narrative)
-    if abs(p.curvature - q.curvature) <= NARRATIVE_RNE.stability_bound:
-        return True
-
-    # Spectral → anything: curvature compatibility is not meaningful
-    if p.drift > 0:
-        return False
-
-    # Default: allow if curvature does not increase dramatically
-    return abs(q.curvature) <= abs(p.curvature) + 0.05
+    name = lineage.name.upper()
+    if name not in CURVATURE_REGISTRY:
+        raise KeyError(f"No curvature function registered for lineage: {lineage.name}")
+    return CURVATURE_REGISTRY[name]
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Curvature Gradient
 # ---------------------------------------------------------------------------
 
-def get_curvature_fn(lineage: Lineage):
+def curvature_gradient(p: Point, q: Point) -> float:
     """
-    Retrieve curvature or drift function for a lineage.
-    """
-    if lineage is OPERATOR:
-        return curvature_operator
-    if lineage is EXPRESSIVE_PRECL:
-        return curvature_precl
-    if lineage is EXPRESSIVE_ANIMA:
-        return curvature_anima
-    if lineage is NARRATIVE_RNE:
-        return curvature_narrative
-    if lineage is SPECTRAL:
-        return drift_spectral
+    Compute curvature gradient between two points.
 
-    raise ValueError(f"Unknown lineage: {lineage.name}")
+    Defined as absolute difference in curvature plus gradient difference.
+    """
+    return abs(q.curvature - p.curvature) + abs(q.gradient - p.gradient)
+
+
+# ---------------------------------------------------------------------------
+# Curvature Compatibility
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CurvatureCompatibility:
+    """Structured result for curvature compatibility evaluation."""
+    compatible: bool
+    delta: float
+    threshold: float
+    reason: str
+
+
+def curvature_compatible(p: Point, q: Point, threshold: float = 0.20) -> CurvatureCompatibility:
+    """
+    Determine whether curvature transition p -> q is smooth enough for membrane evaluation.
+
+    Parameters
+    ----------
+    p : Point
+        Source point.
+    q : Point
+        Target point.
+    threshold : float
+        Maximum allowed curvature gradient for compatibility.
+
+    Returns
+    -------
+    CurvatureCompatibility
+        Structured result containing compatibility flag, delta, threshold, and reason.
+    """
+    delta = curvature_gradient(p, q)
+    compatible = delta <= threshold
+
+    reason = (
+        "Curvature transition is smooth."
+        if compatible else
+        f"Curvature gradient {delta:.4f} exceeds threshold {threshold:.4f}."
+    )
+
+    return CurvatureCompatibility(
+        compatible=compatible,
+        delta=delta,
+        threshold=threshold,
+        reason=reason,
+    )
