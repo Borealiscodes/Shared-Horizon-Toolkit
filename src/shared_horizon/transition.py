@@ -1,143 +1,191 @@
 """
 transition.py
-Shared-Horizon Toolkit — Transition Maps
+Shared-Horizon Toolkit — Lineage Transition Maps
 
-Defines lineage-aware transition rules, curvature compatibility,
-collapse-risk compatibility, and reversible transition constraints.
-Used by membrane.py to determine whether a transition between
-two points is allowed.
+Implements lineage transition rules, reversibility constraints, and forbidden
+transitions. Transition logic is Stage 4 of the membrane evaluation pipeline,
+following envelope safety, curvature compatibility, and collapse-risk checks.
 
 Author: Borealis S. Hedling (2026)
 """
 
 from dataclasses import dataclass
+from typing import Dict, Tuple
+
 from .lineage import (
     Lineage,
     OPERATOR,
-    EXPRESSIVE_PRECL,
+    PRECL,
     EXPRESSIVE_ANIMA,
-    NARRATIVE_RNE,
-    SPECTRAL
+    RNE,
+    SPECTRAL,
 )
-from .curvature import Point, curvature_compatible
-from .collapse import collapse_compatible
 
 
 # ---------------------------------------------------------------------------
-# Transition Map
+# Transition Definition
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class TransitionMap:
+class Transition:
     """
-    Represents a lineage-to-lineage transition rule.
+    Immutable lineage transition rule.
 
-    Attributes:
-        source: source lineage
-        target: target lineage
-        reversible: whether the transition is reversible
-        description: human-readable description
+    Attributes
+    ----------
+    source : str
+        Source lineage name.
+    target : str
+        Target lineage name.
+    reversible : bool
+        Whether the transition must be reversible.
+    allowed : bool
+        Whether the transition is permitted.
+    reason : str
+        Diagnostic explanation.
     """
-    source: Lineage
-    target: Lineage
+    source: str
+    target: str
     reversible: bool
-    description: str
-
-    def allowed(self, p: Point, q: Point) -> bool:
-        """
-        Check whether a transition from p (source) to q (target) is allowed.
-        """
-        # Spectral → anything is blocked (firewall handles this later)
-        if self.source is SPECTRAL:
-            return False
-
-        # Curvature compatibility
-        if not curvature_compatible(p, q):
-            return False
-
-        # Collapse-risk compatibility
-        if not collapse_compatible(p, q):
-            return False
-
-        # Reversibility requirement
-        if self.target.reversible_required and not self.reversible:
-            return False
-
-        return True
+    allowed: bool
+    reason: str
 
 
 # ---------------------------------------------------------------------------
 # Transition Rules
 # ---------------------------------------------------------------------------
+# These rules encode the geometric constraints described in your notebook series.
 
-# Operator → PRECL (continuity)
-OPERATOR_TO_PRECL = TransitionMap(
-    source=OPERATOR,
-    target=EXPRESSIVE_PRECL,
-    reversible=True,
-    description="Operator → PRECL continuity transition."
-)
+TRANSITION_RULES: Dict[Tuple[str, str], Transition] = {}
 
-# PRECL → ANIMA (expressive amplification)
-PRECL_TO_ANIMA = TransitionMap(
-    source=EXPRESSIVE_PRECL,
-    target=EXPRESSIVE_ANIMA,
-    reversible=False,
-    description="PRECL → ANIMA expressive amplification."
-)
-
-# ANIMA → Narrative (reversible expressive → narrative)
-ANIMA_TO_RNE = TransitionMap(
-    source=EXPRESSIVE_ANIMA,
-    target=NARRATIVE_RNE,
-    reversible=True,
-    description="ANIMA → RNE reversible expressive → narrative transition."
-)
-
-# Narrative → Operator (curvature reduction)
-RNE_TO_OPERATOR = TransitionMap(
-    source=NARRATIVE_RNE,
-    target=OPERATOR,
-    reversible=True,
-    description="RNE → Operator curvature reduction."
-)
-
-# Spectral → anything (blocked)
-SPECTRAL_TO_ANY = TransitionMap(
-    source=SPECTRAL,
-    target=OPERATOR,
-    reversible=False,
-    description="Spectral → Operator (blocked by firewall)."
-)
-
-
-# Registry
-TRANSITION_REGISTRY = {
-    ("OPERATOR", "PRECL"): OPERATOR_TO_PRECL,
-    ("PRECL", "ANIMA"): PRECL_TO_ANIMA,
-    ("ANIMA", "RNE"): ANIMA_TO_RNE,
-    ("RNE", "OPERATOR"): RNE_TO_OPERATOR,
-    ("SPECTRAL", "OPERATOR"): SPECTRAL_TO_ANY,
-}
+def _add(source: Lineage, target: Lineage, allowed: bool, reason: str):
+    """Internal helper to populate the transition registry."""
+    reversible = target.reversible_required or source.reversible_required
+    TRANSITION_RULES[(source.name, target.name)] = Transition(
+        source=source.name,
+        target=target.name,
+        reversible=reversible,
+        allowed=allowed,
+        reason=reason,
+    )
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Allowed Transitions
 # ---------------------------------------------------------------------------
 
-def get_transition(source: str, target: str) -> TransitionMap:
-    """
-    Retrieve a transition map by lineage name.
-    """
-    key = (source.upper(), target.upper())
-    if key not in TRANSITION_REGISTRY:
-        raise ValueError(f"No transition defined for {source} → {target}")
-    return TRANSITION_REGISTRY[key]
+# OPERATOR → PRECL (smooth expressive continuity)
+_add(OPERATOR, PRECL, True, "Smooth expressive continuity transition.")
+
+# PRECL → OPERATOR (reversible return)
+_add(PRECL, OPERATOR, True, "Reversible return to operator geometry.")
+
+# PRECL → ANIMA (expressive ascent)
+_add(PRECL, EXPRESSIVE_ANIMA, True, "Expressive ascent into ANIMA geometry.")
+
+# ANIMA → PRECL (reversible descent)
+_add(EXPRESSIVE_ANIMA, PRECL, True, "Reversible descent from ANIMA.")
+
+# RNE ↔ PRECL (narrative ↔ expressive reversible)
+_add(RNE, PRECL, True, "Reversible narrative → expressive transition.")
+_add(PRECL, RNE, True, "Reversible expressive → narrative transition.")
+
+# RNE ↔ ANIMA (reversible expressive-narrative)
+_add(RNE, EXPRESSIVE_ANIMA, True, "Reversible narrative → ANIMA transition.")
+_add(EXPRESSIVE_ANIMA, RNE, True, "Reversible ANIMA → narrative transition.")
 
 
-def transition_allowed(p: Point, q: Point, source: str, target: str) -> bool:
+# ---------------------------------------------------------------------------
+# Forbidden Transitions
+# ---------------------------------------------------------------------------
+
+# OPERATOR → ANIMA (too steep curvature)
+_add(OPERATOR, EXPRESSIVE_ANIMA, False, "Forbidden: curvature amplification too steep.")
+
+# OPERATOR → RNE (requires reversible operator, not satisfied)
+_add(OPERATOR, RNE, False, "Forbidden: RNE requires reversible operator geometry.")
+
+# OPERATOR → SPECTRAL (hard firewall block)
+_add(OPERATOR, SPECTRAL, False, "Forbidden: spectral drift incompatible with operator geometry.")
+
+# PRECL → SPECTRAL (hard firewall block)
+_add(PRECL, SPECTRAL, False, "Forbidden: spectral drift incompatible with expressive continuity.")
+
+# ANIMA → SPECTRAL (hard firewall block)
+_add(EXPRESSIVE_ANIMA, SPECTRAL, False, "Forbidden: spectral drift incompatible with ANIMA geometry.")
+
+# RNE → SPECTRAL (hard firewall block)
+_add(RNE, SPECTRAL, False, "Forbidden: spectral drift incompatible with narrative geometry.")
+
+# SPECTRAL → any (spectral cannot transition out)
+for target in [OPERATOR, PRECL, EXPRESSIVE_ANIMA, RNE]:
+    _add(SPECTRAL, target, False, "Forbidden: spectral geometry cannot transition out.")
+
+
+# ---------------------------------------------------------------------------
+# Transition Lookup
+# ---------------------------------------------------------------------------
+
+def get_transition(source: str | Lineage, target: str | Lineage) -> Transition:
     """
-    Convenience function used by membrane.py.
+    Retrieve the transition rule between two lineages.
+
+    Parameters
+    ----------
+    source : str or Lineage
+    target : str or Lineage
+
+    Returns
+    -------
+    Transition
+        The corresponding transition rule.
+
+    Raises
+    ------
+    KeyError
+        If the transition is not defined.
     """
-    t = get_transition(source, target)
-    return t.allowed(p, q)
+    if isinstance(source, Lineage):
+        source = source.name
+    if isinstance(target, Lineage):
+        target = target.name
+
+    key = (source, target)
+    if key not in TRANSITION_RULES:
+        raise KeyError(f"No transition rule defined for {source} → {target}")
+    return TRANSITION_RULES[key]
+
+
+# ---------------------------------------------------------------------------
+# Transition Permission Check
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class TransitionDecision:
+    """Structured result for transition permission evaluation."""
+    allowed: bool
+    reversible: bool
+    reason: str
+    source: str
+    target: str
+
+
+def transition_allowed(source: str | Lineage, target: str | Lineage) -> TransitionDecision:
+    """
+    Determine whether a lineage transition is allowed.
+
+    Returns
+    -------
+    TransitionDecision
+        Structured result containing permission flag, reversibility requirement,
+        and diagnostic reason.
+    """
+    rule = get_transition(source, target)
+
+    return TransitionDecision(
+        allowed=rule.allowed,
+        reversible=rule.reversible,
+        reason=rule.reason,
+        source=rule.source,
+        target=rule.target,
+    )
