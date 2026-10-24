@@ -2,137 +2,143 @@
 envelopes.py
 Shared-Horizon Toolkit — Stability Envelopes
 
-Defines lineage-specific stability envelopes, energy functionals,
-and envelope safety checks used by the membrane evaluator.
+Implements lineage-specific stability envelopes. Each envelope is an energy
+functional that determines whether a geometric point lies within the safe
+operating region of a lineage.
+
+Envelope safety is Stage 1 of the membrane evaluation pipeline.
 
 Author: Borealis S. Hedling (2026)
 """
 
 from dataclasses import dataclass
-from typing import Callable
-from .lineage import Lineage, OPERATOR, EXPRESSIVE_PRECL, EXPRESSIVE_ANIMA, NARRATIVE_RNE, SPECTRAL
+from typing import Callable, Dict
+
+from .lineage import Lineage, OPERATOR, PRECL, EXPRESSIVE_ANIMA, RNE, SPECTRAL
+from .curvature import Point
 
 
 # ---------------------------------------------------------------------------
-# Energy Functionals
-# ---------------------------------------------------------------------------
-
-def operator_energy(p) -> float:
-    """
-    NDH operator energy functional.
-    Typically small and curvature-based.
-    """
-    return abs(p.curvature)
-
-
-def precl_energy(p) -> float:
-    """
-    PRECL expressive continuity energy.
-    Low curvature, smooth gradients.
-    """
-    return abs(p.curvature)
-
-
-def anima_energy(p) -> float:
-    """
-    ANIMA expressive phenomenology energy.
-    High curvature, steep gradients.
-    """
-    return abs(p.curvature) + abs(p.gradient)
-
-
-def narrative_energy(p) -> float:
-    """
-    RNE narrative curvature energy.
-    Moderate curvature with reversibility constraints.
-    """
-    return abs(p.curvature)
-
-
-def spectral_energy(p) -> float:
-    """
-    Spectral drift energy.
-    Drift replaces curvature as the dominant instability measure.
-    """
-    return abs(p.drift)
-
-
-# ---------------------------------------------------------------------------
-# Envelope Definition
+# Envelope Energy Functional
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
-class Envelope:
-    lineage: Lineage
-    energy_fn: Callable
+class EnvelopeResult:
+    """Structured result for envelope evaluation."""
+    safe: bool
+    energy: float
     bound: float
-
-    def safe(self, p) -> bool:
-        """
-        Check whether a point p lies within the lineage's stability envelope.
-        """
-        return self.energy_fn(p) <= self.bound
+    lineage: str
+    reason: str
 
 
 # ---------------------------------------------------------------------------
-# Envelope Instances
+# Envelope Functions
 # ---------------------------------------------------------------------------
 
-OPERATOR_ENVELOPE = Envelope(
-    lineage=OPERATOR,
-    energy_fn=operator_energy,
-    bound=OPERATOR.stability_bound
-)
-
-PRECL_ENVELOPE = Envelope(
-    lineage=EXPRESSIVE_PRECL,
-    energy_fn=precl_energy,
-    bound=EXPRESSIVE_PRECL.stability_bound
-)
-
-ANIMA_ENVELOPE = Envelope(
-    lineage=EXPRESSIVE_ANIMA,
-    energy_fn=anima_energy,
-    bound=EXPRESSIVE_ANIMA.stability_bound
-)
-
-NARRATIVE_ENVELOPE = Envelope(
-    lineage=NARRATIVE_RNE,
-    energy_fn=narrative_energy,
-    bound=NARRATIVE_RNE.stability_bound
-)
-
-SPECTRAL_ENVELOPE = Envelope(
-    lineage=SPECTRAL,
-    energy_fn=spectral_energy,
-    bound=SPECTRAL.stability_bound
-)
+def envelope_operator(p: Point) -> float:
+    """
+    Operator envelope: low curvature, low gradient, no drift.
+    Energy = curvature + 0.5 * gradient
+    """
+    return p.curvature + 0.5 * p.gradient
 
 
-# Registry for lookup
-ENVELOPE_REGISTRY = {
-    "OPERATOR": OPERATOR_ENVELOPE,
-    "PRECL": PRECL_ENVELOPE,
-    "ANIMA": ANIMA_ENVELOPE,
-    "RNE": NARRATIVE_ENVELOPE,
-    "SPECTRAL": SPECTRAL_ENVELOPE,
+def envelope_precl(p: Point) -> float:
+    """
+    PRECL envelope: expressive continuity, slightly higher curvature sensitivity.
+    Energy = 1.2 * curvature + 0.5 * gradient
+    """
+    return 1.2 * p.curvature + 0.5 * p.gradient
+
+
+def envelope_anima(p: Point) -> float:
+    """
+    ANIMA envelope: high curvature, high gradient.
+    Energy = 2.5 * curvature + 1.5 * gradient
+    """
+    return 2.5 * p.curvature + 1.5 * p.gradient
+
+
+def envelope_rne(p: Point) -> float:
+    """
+    RNE envelope: moderate curvature + gradient.
+    Energy = 1.8 * curvature + 1.0 * gradient
+    """
+    return 1.8 * p.curvature + 1.0 * p.gradient
+
+
+def envelope_spectral(p: Point) -> float:
+    """
+    Spectral envelope: drift-dominated geometry.
+    Energy = 3.0 * drift + 0.2 * curvature
+    """
+    return 3.0 * p.drift + 0.2 * p.curvature
+
+
+# ---------------------------------------------------------------------------
+# Envelope Registry
+# ---------------------------------------------------------------------------
+
+ENVELOPE_REGISTRY: Dict[str, Callable[[Point], float]] = {
+    "OPERATOR": envelope_operator,
+    "PRECL": envelope_precl,
+    "ANIMA": envelope_anima,
+    "RNE": envelope_rne,
+    "SPECTRAL": envelope_spectral,
 }
 
 
+def get_envelope_fn(lineage: Lineage) -> Callable[[Point], float]:
+    """
+    Retrieve the envelope function for a lineage.
+    """
+    name = lineage.name.upper()
+    if name not in ENVELOPE_REGISTRY:
+        raise KeyError(f"No envelope function registered for lineage: {lineage.name}")
+    return ENVELOPE_REGISTRY[name]
+
+
 # ---------------------------------------------------------------------------
-# Public API
+# Envelope Safety Check
 # ---------------------------------------------------------------------------
 
-def get_envelope(lineage_name: str) -> Envelope:
+def envelope_safe(p: Point, lineage: Lineage | str) -> EnvelopeResult:
     """
-    Retrieve the stability envelope for a lineage.
-    """
-    return ENVELOPE_REGISTRY[lineage_name.upper()]
+    Determine whether a point lies within the stability envelope of a lineage.
 
+    Parameters
+    ----------
+    p : Point
+        Geometric point with curvature, gradient, drift.
+    lineage : Lineage or str
+        Lineage object or lineage name.
 
-def envelope_safe(p, lineage_name: str) -> bool:
+    Returns
+    -------
+    EnvelopeResult
+        Structured result containing safety flag, energy, bound, lineage name,
+        and diagnostic reason.
     """
-    Convenience function used by membrane.py.
-    """
-    env = get_envelope(lineage_name)
-    return env.safe(p)
+    if isinstance(lineage, str):
+        from .lineage import get_lineage
+        lineage = get_lineage(lineage)
+
+    fn = get_envelope_fn(lineage)
+    energy = fn(p)
+    bound = lineage.stability_bound
+    safe = energy <= bound
+
+    reason = (
+        "Energy within stability bound."
+        if safe else
+        f"Energy {energy:.4f} exceeds stability bound {bound:.4f}."
+    )
+
+    return EnvelopeResult(
+        safe=safe,
+        energy=energy,
+        bound=bound,
+        lineage=lineage.name,
+        reason=reason,
+    )
