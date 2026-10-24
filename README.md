@@ -57,6 +57,8 @@ All expressive geometry in the Toolkit is original to Shared‑Horizon but ackno
 🗂️ Repository Structure
 
 `
+<pre> 
+    
 Shared-Horizon-Toolkit/
 │
 ├── README.md
@@ -104,6 +106,8 @@ Shared-Horizon-Toolkit/
     ├── mosaic-specification.md
     └── provenance.md
 `
+    
+</pre>
 
 ---
 
