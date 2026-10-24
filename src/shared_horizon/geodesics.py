@@ -2,182 +2,183 @@
 geodesics.py
 Shared-Horizon Toolkit — Lineage & Transition Geodesics
 
-Defines geodesic computation across lineage regions. Geodesics are
-curvature-weighted or drift-weighted shortest paths between points
-in the Shared-Horizon membrane architecture.
+Implements geometric geodesics for lineage diagnostics. Geodesics provide
+curvature-weighted, gradient-weighted, drift-weighted, and collapse-risk
+weighted paths between geometric points.
+
+This subsystem is used for visualization, debugging, and membrane analysis.
 
 Author: Borealis S. Hedling (2026)
 """
 
 from dataclasses import dataclass
-from math import sqrt
-from .lineage import (
-    Lineage,
-    OPERATOR,
-    EXPRESSIVE_PRECL,
-    EXPRESSIVE_ANIMA,
-    NARRATIVE_RNE,
-    SPECTRAL
-)
-from .curvature import Point, curvature_gradient, get_curvature_fn
-from .collapse import get_collapse_fn
+from typing import Callable, Dict, List
+
+from .curvature import Point, curvature_gradient
+from .collapse import collapse_spectral, collapse_anima, collapse_operator, collapse_precl, collapse_narrative
+from .lineage import Lineage, OPERATOR, PRECL, EXPRESSIVE_ANIMA, RNE, SPECTRAL
 
 
 # ---------------------------------------------------------------------------
 # Geodesic Segment
 # ---------------------------------------------------------------------------
 
-@dataclass
+@dataclass(frozen=True)
 class GeodesicSegment:
     """
-    Represents a geodesic segment between two points.
+    A single segment of a geodesic path.
 
-    Attributes:
-        length: geodesic length
-        curvature_cost: curvature contribution
-        drift_cost: drift contribution
-        collapse_cost: collapse-risk contribution
+    Attributes
+    ----------
+    start : Point
+        Starting geometric point.
+    end : Point
+        Ending geometric point.
+    cost : float
+        Geodesic cost for this segment.
+    lineage : str
+        Lineage used for weighting.
     """
-    length: float
-    curvature_cost: float
-    drift_cost: float
-    collapse_cost: float
-
-    @property
-    def total(self) -> float:
-        return self.length + self.curvature_cost + self.drift_cost + self.collapse_cost
+    start: Point
+    end: Point
+    cost: float
+    lineage: str
 
 
 # ---------------------------------------------------------------------------
-# Lineage-Specific Geodesic Behavior
+# Lineage-Specific Geodesic Functions
 # ---------------------------------------------------------------------------
 
-def geodesic_operator(p: Point, q: Point) -> GeodesicSegment:
+def geodesic_operator(p: Point, q: Point) -> float:
     """
-    NDH operator geodesic.
-    Smooth, low curvature, low collapse-risk.
+    Operator geodesic: curvature-weighted, minimal drift.
+    Cost = |Δcurvature| + 0.5 * |Δgradient|
     """
-    base = sqrt((q.curvature - p.curvature)**2)
-    return GeodesicSegment(
-        length=base,
-        curvature_cost=base * 0.5,
-        drift_cost=0.0,
-        collapse_cost=abs(q.curvature - p.curvature) * 0.2
-    )
+    return abs(q.curvature - p.curvature) + 0.5 * abs(q.gradient - p.gradient)
 
 
-def geodesic_precl(p: Point, q: Point) -> GeodesicSegment:
+def geodesic_precl(p: Point, q: Point) -> float:
     """
-    PRECL expressive continuity geodesic.
-    Low curvature, smooth gradients.
+    PRECL geodesic: expressive continuity.
+    Cost = 1.2 * |Δcurvature| + 0.5 * |Δgradient|
     """
-    base = sqrt((q.curvature - p.curvature)**2)
-    return GeodesicSegment(
-        length=base,
-        curvature_cost=base * 0.7,
-        drift_cost=0.0,
-        collapse_cost=abs(q.gradient - p.gradient) * 0.3
-    )
+    return 1.2 * abs(q.curvature - p.curvature) + 0.5 * abs(q.gradient - p.gradient)
 
 
-def geodesic_anima(p: Point, q: Point) -> GeodesicSegment:
+def geodesic_anima(p: Point, q: Point) -> float:
     """
-    ANIMA expressive phenomenology geodesic.
-    High curvature and steep gradients dominate.
+    ANIMA geodesic: steep expressive curvature.
+    Cost = 2.5 * |Δcurvature| + 1.5 * |Δgradient|
     """
-    base = sqrt((q.curvature - p.curvature)**2 + (q.gradient - p.gradient)**2)
-    return GeodesicSegment(
-        length=base,
-        curvature_cost=base * 1.5,
-        drift_cost=0.0,
-        collapse_cost=abs(q.gradient - p.gradient) * 1.0
-    )
+    return 2.5 * abs(q.curvature - p.curvature) + 1.5 * abs(q.gradient - p.gradient)
 
 
-def geodesic_narrative(p: Point, q: Point) -> GeodesicSegment:
+def geodesic_narrative(p: Point, q: Point) -> float:
     """
-    RNE narrative geodesic.
-    Moderate curvature, moderate gradient.
+    RNE geodesic: moderate curvature + gradient.
+    Cost = 1.8 * |Δcurvature| + 1.0 * |Δgradient|
     """
-    base = sqrt((q.curvature - p.curvature)**2 + (q.gradient - p.gradient)**2)
-    return GeodesicSegment(
-        length=base,
-        curvature_cost=base * 1.0,
-        drift_cost=0.0,
-        collapse_cost=abs(q.gradient - p.gradient) * 0.6
-    )
+    return 1.8 * abs(q.curvature - p.curvature) + 1.0 * abs(q.gradient - p.gradient)
 
 
-def geodesic_spectral(p: Point, q: Point) -> GeodesicSegment:
+def geodesic_spectral(p: Point, q: Point) -> float:
     """
-    Spectral geodesic.
-    Drift dominates geodesic behavior.
+    Spectral geodesic: drift-dominated geometry.
+    Cost = 3.0 * |Δdrift| + 0.2 * |Δcurvature|
     """
-    base = abs(q.drift - p.drift)
-    return GeodesicSegment(
-        length=base,
-        curvature_cost=0.0,
-        drift_cost=base * 2.0,
-        collapse_cost=abs(q.drift - p.drift) * 1.5
-    )
+    return 3.0 * abs(q.drift - p.drift) + 0.2 * abs(q.curvature - p.curvature)
 
 
 # ---------------------------------------------------------------------------
-# Geodesic Dispatch
+# Geodesic Registry
 # ---------------------------------------------------------------------------
 
-def get_geodesic_fn(lineage: Lineage):
-    """
-    Retrieve geodesic function for a lineage.
-    """
-    if lineage is OPERATOR:
-        return geodesic_operator
-    if lineage is EXPRESSIVE_PRECL:
-        return geodesic_precl
-    if lineage is EXPRESSIVE_ANIMA:
-        return geodesic_anima
-    if lineage is NARRATIVE_RNE:
-        return geodesic_narrative
-    if lineage is SPECTRAL:
-        return geodesic_spectral
+GEODESIC_REGISTRY: Dict[str, Callable[[Point, Point], float]] = {
+    "OPERATOR": geodesic_operator,
+    "PRECL": geodesic_precl,
+    "ANIMA": geodesic_anima,
+    "RNE": geodesic_narrative,
+    "SPECTRAL": geodesic_spectral,
+}
 
-    raise ValueError(f"Unknown lineage: {lineage.name}")
+
+def get_geodesic_fn(lineage: Lineage) -> Callable[[Point, Point], float]:
+    """
+    Retrieve the geodesic function for a lineage.
+    """
+    name = lineage.name.upper()
+    if name not in GEODESIC_REGISTRY:
+        raise KeyError(f"No geodesic function registered for lineage: {lineage.name}")
+    return GEODESIC_REGISTRY[name]
 
 
 # ---------------------------------------------------------------------------
 # Geodesic Solver
 # ---------------------------------------------------------------------------
 
+@dataclass(frozen=True)
+class GeodesicPath:
+    """
+    Full geodesic path between two points.
+
+    Attributes
+    ----------
+    segments : List[GeodesicSegment]
+        List of geodesic segments.
+    total_cost : float
+        Sum of segment costs.
+    lineage : str
+        Lineage used for weighting.
+    """
+    segments: List[GeodesicSegment]
+    total_cost: float
+    lineage: str
+
+
 class GeodesicSolver:
     """
-    Computes lineage-specific geodesics and transition geodesics.
+    Compute geodesics between geometric points.
+
+    Usage
+    -----
+    solver = GeodesicSolver()
+    path = solver.compute(p, q, "PRECL")
     """
 
-    def __init__(self):
-        pass
+    def compute(self, p: Point, q: Point, lineage: Lineage | str) -> GeodesicPath:
+        """
+        Compute geodesic path between two points.
 
-    def geodesic(self, p: Point, q: Point, lineage: Lineage) -> GeodesicSegment:
+        Parameters
+        ----------
+        p : Point
+            Starting point.
+        q : Point
+            Ending point.
+        lineage : Lineage or str
+            Lineage used for weighting.
+
+        Returns
+        -------
+        GeodesicPath
+            Structured geodesic path.
         """
-        Compute geodesic segment for a single lineage.
-        """
+        if isinstance(lineage, str):
+            from .lineage import get_lineage
+            lineage = get_lineage(lineage)
+
         fn = get_geodesic_fn(lineage)
-        return fn(p, q)
+        cost = fn(p, q)
 
-    def transition_geodesic(self, p: Point, q: Point, source: Lineage, target: Lineage) -> GeodesicSegment:
-        """
-        Compute geodesic across a lineage transition.
+        segment = GeodesicSegment(
+            start=p,
+            end=q,
+            cost=cost,
+            lineage=lineage.name,
+        )
 
-        Rule:
-            - Compute geodesic in source lineage
-            - Compute geodesic in target lineage
-            - Combine costs
-        """
-        gs_src = self.geodesic(p, q, source)
-        gs_tgt = self.geodesic(p, q, target)
-
-        return GeodesicSegment(
-            length=(gs_src.length + gs_tgt.length) / 2,
-            curvature_cost=(gs_src.curvature_cost + gs_tgt.curvature_cost),
-            drift_cost=(gs_src.drift_cost + gs_tgt.drift_cost),
-            collapse_cost=(gs_src.collapse_cost + gs_tgt.collapse_cost)
+        return GeodesicPath(
+            segments=[segment],
+            total_cost=cost,
+            lineage=lineage.name,
         )
